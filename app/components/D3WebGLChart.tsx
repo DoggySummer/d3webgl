@@ -38,11 +38,17 @@ function D3WebGLChart() {
   const { drawAxes } = useAxesLayer({ margin: MARGIN });
   const { drawCursor } = useCursorLayer({ margin: MARGIN });
 
-  // ← useTemperatureData → useChartData로 교체
   const { data, isLoading, updateViewRange, viewRange } = useChartData({
-    dataUrl: "/mock-weather.json",
-    xKey: "timestamps",
-    yKey: "temperatures",
+    lines: [
+      {
+        dataUrl: "/mock-weather.json",
+        xKey: "timestamps",
+        yKey: "temperatures",
+        label: "온도",
+        color: "#2563eb",
+        formatY: (v) => `${v.toFixed(1)}°C`,
+      },
+    ],
   });
 
   const getInnerDims = useCallback(() => ({

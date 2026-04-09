@@ -3,8 +3,8 @@
 /**
  * components/WebGLLineChart.tsx
  *
- * config를 받아서 렌더링하는 범용 라인 차트 컴포넌트입니다.
- * 단일 라인 / 멀티라인 모두 지원합니다.
+ * 싱글라인 전용 범용 차트 컴포넌트입니다.
+ * 멀티라인이 필요하면 WebGLMultiLineChart.tsx를 사용하세요.
  */
 
 import {
@@ -17,6 +17,7 @@ import * as d3 from "d3";
 import { clampViewRangeMs } from "@/hooks/useTemperatureData";
 import type { LineChartConfig } from "@/lib/chart/chartConfig";
 import type { ChartState } from "@/lib/chart/types";
+import { initialYRangeFromTemps } from "@/lib/chart/math";
 import { drawWebGLLine, uploadLineData } from "@/lib/chart/webgl";
 import { useAxesLayer } from "@/hooks/chart/useAxesLayer";
 import { useCursorLayer } from "@/hooks/chart/useCursorLayer";
@@ -24,7 +25,6 @@ import { useChartInteractions } from "@/hooks/chart/useChartInteractions";
 import { useWebGLLineLayer } from "@/hooks/chart/useWebGLLineLayer";
 import { ChartCanvasStack } from "@/components/chart/ChartCanvasStack";
 import { useChartData } from "@/hooks/useChartData";
-import { initialYRangeFromTemps } from "@/lib/chart/math";
 
 const MARGIN = { top: 20, right: 20, bottom: 60, left: 50 };
 
@@ -34,14 +34,12 @@ interface WebGLLineChartProps {
 
 export function WebGLLineChart({ config }: WebGLLineChartProps) {
   const HEIGHT = config.height ?? 540;
+  const firstLine = config.lines[0];
 
   // ── Refs ──────────────────────────────────────────────────────────────
 
   const containerRef = useRef<HTMLDivElement>(null);
   const chartStateRef = useRef<ChartState | null>(null);
-  // 멀티라인: 라인별 데이터를 배열로 보관
-  const seriesDataRef = useRef<{ timestamps: number[]; values: number[] }[]>([]);
-  // 하위 호환: 단일 라인 / 인터랙션 훅용
   const dataRef = useRef<{ timestamps: number[]; values: number[] }>({
     timestamps: [],
     values: [],
@@ -62,8 +60,9 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
 
   // ── 데이터 로드 ───────────────────────────────────────────────────────
 
-  const { seriesData, data, isLoading, updateViewRange, viewRange } =
-    useChartData({ lines: config.lines });
+  const { data, isLoading, updateViewRange, viewRange } = useChartData({
+    lines: [firstLine],
+  });
 
   // ── 내부 치수 ─────────────────────────────────────────────────────────
 
@@ -76,71 +75,17 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
   );
 
   // ── 차트 그리기 ───────────────────────────────────────────────────────
-  // 멀티라인: 각 라인마다 uploadLineData + drawWebGLLine 호출
 
   const drawChartNow = useCallback(
     (cs: ChartState, innerW: number, innerH: number) => {
-      const series = seriesDataRef.current;
-
-      if (series.length <= 1) {
-        // 단일 라인
-        drawWebGLLine(
-          cs.webgl,
-          cs.xScale,
-          cs.yScale,
-          cs.glCanvas.width,
-          cs.glCanvas.height,
-          MARGIN
-        );
-      } else {
-        // 멀티라인: 라인마다 버퍼 업로드 + 색상 변경 + draw
-        series.forEach((s, i) => {
-          const line = config.lines[i];
-          if (!line) return;
-          const { gl, program } = cs.webgl;
-
-          const r = parseInt(line.color.slice(1, 3), 16) / 255;
-          const g = parseInt(line.color.slice(3, 5), 16) / 255;
-          const b = parseInt(line.color.slice(5, 7), 16) / 255;
-
-          const innerW = cs.glCanvas.width - MARGIN.left - MARGIN.right;
-          const innerH = cs.glCanvas.height - MARGIN.top - MARGIN.bottom;
-          const xDomain = cs.xScale.domain();
-          const yDomain = cs.yScale.domain();
-
-          // i === 0일 때만 화면 초기화
-          if (i === 0) {
-            gl.viewport(0, 0, cs.glCanvas.width, cs.glCanvas.height);
-            gl.clearColor(0, 0, 0, 0);
-            gl.clear(gl.COLOR_BUFFER_BIT);
-          }
-
-          gl.enable(gl.SCISSOR_TEST);
-          gl.scissor(MARGIN.left, MARGIN.bottom, innerW, innerH);
-          gl.useProgram(program);
-
-          gl.uniform1f(cs.webgl.uXMin, xDomain[0].getTime());
-          gl.uniform1f(cs.webgl.uXMax, xDomain[1].getTime());
-          gl.uniform1f(cs.webgl.uYMin, yDomain[0]);
-          gl.uniform1f(cs.webgl.uYMax, yDomain[1]);
-          gl.uniform2f(cs.webgl.uResolution, cs.glCanvas.width, cs.glCanvas.height);
-          gl.uniform4f(cs.webgl.uColor, r, g, b, 1.0);  // ← 라인별 색상
-
-          cs.webgl.pointCount = uploadLineData(cs.webgl, s.timestamps, s.values);
-
-          gl.bindBuffer(gl.ARRAY_BUFFER, cs.webgl.xBuf);
-          gl.enableVertexAttribArray(cs.webgl.aX);
-          gl.vertexAttribPointer(cs.webgl.aX, 1, gl.FLOAT, false, 0, 0);
-
-          gl.bindBuffer(gl.ARRAY_BUFFER, cs.webgl.yBuf);
-          gl.enableVertexAttribArray(cs.webgl.aY);
-          gl.vertexAttribPointer(cs.webgl.aY, 1, gl.FLOAT, false, 0, 0);
-
-          gl.drawArrays(gl.LINE_STRIP, 0, cs.webgl.pointCount);
-          gl.disable(gl.SCISSOR_TEST);
-        });
-      }
-
+      drawWebGLLine(
+        cs.webgl,
+        cs.xScale,
+        cs.yScale,
+        cs.glCanvas.width,
+        cs.glCanvas.height,
+        MARGIN
+      );
       drawAxes({
         ctx: cs.axisCtx,
         canvas: cs.axisCanvas,
@@ -150,7 +95,7 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
         innerH,
       });
     },
-    [drawAxes, config.lines]
+    [drawAxes]
   );
 
   // ── WebGL 초기화 ──────────────────────────────────────────────────────
@@ -204,48 +149,35 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
   useEffect(() => {
     if (!containerRef.current || containerWidth === 0) return;
     if (chartStateRef.current) return;
-    if (!seriesData || seriesData.length === 0) return;
-    if (seriesData[0].timestamps.length === 0) return;
+    if (!data || data.timestamps.length === 0) return;
     if (!glCanvas || !axisCanvas || !cursorCanvas) return;
     const wgl = wglRef.current;
     if (!isWebGLReady || !wgl) return;
 
     const { innerW, innerH } = getInnerDims();
+    const { start: xMinMs, end: xMaxMs } = clampViewRangeMs(
+      viewRange.start,
+      viewRange.end
+    );
 
-    // 전체 시리즈에서 x 범위 계산
-    const allTimestamps = seriesData.flatMap((s) => s.timestamps);
-    const xExtent = d3.extent(allTimestamps) as [number, number];
-    const { start: xMinMs, end: xMaxMs } = clampViewRangeMs(xExtent[0], xExtent[1]);
+    const y0 =
+      config.yMin !== undefined && config.yMax !== undefined
+        ? { min: config.yMin, max: config.yMax }
+        : initialYRangeFromTemps(data.values);
 
-    // 전체 시리즈에서 y 범위 계산
-    const allValues = seriesData.flatMap((s) => s.values);
-    const y0 = config.yMin !== undefined && config.yMax !== undefined
-      ? { min: config.yMin, max: config.yMax }
-      : initialYRangeFromTemps(allValues);
-
-    const xScale = d3.scaleTime()
+    const xScale = d3
+      .scaleTime()
       .domain([new Date(xMinMs), new Date(xMaxMs)])
       .range([0, innerW]);
-    const yScale = d3.scaleLinear()
+    const yScale = d3
+      .scaleLinear()
       .domain([y0.min, y0.max])
       .range([innerH, 0]);
 
     const axisCtx = axisCanvas.getContext("2d")!;
     const cursorCtx = cursorCanvas.getContext("2d")!;
 
-    // seriesDataRef 초기화
-    seriesDataRef.current = seriesData.map((s) => ({
-      timestamps: s.timestamps,
-      values: s.values,
-    }));
-
-    // dataRef는 첫 번째 라인 기준 (인터랙션 훅용)
-    dataRef.current = {
-      timestamps: seriesData[0].timestamps,
-      values: seriesData[0].values,
-    };
-
-    wgl.pointCount = uploadLineData(wgl, seriesData[0].timestamps, seriesData[0].values);
+    wgl.pointCount = uploadLineData(wgl, data.timestamps, data.values);
 
     const cs: ChartState = {
       xScale,
@@ -263,32 +195,24 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
       cursorTime: 0,
     };
 
+    dataRef.current = { timestamps: data.timestamps, values: data.values };
     chartStateRef.current = cs;
     drawChartNow(cs, innerW, innerH);
   }, [
-    axisCanvas, containerWidth, cursorCanvas, seriesData,
-    config, drawChartNow, getInnerDims, glCanvas, isWebGLReady, viewRange, wglRef,
+    axisCanvas, containerWidth, cursorCanvas, data, config,
+    drawChartNow, getInnerDims, glCanvas, isWebGLReady, viewRange, wglRef,
   ]);
 
   // ── 데이터 변경 시 업데이트 ───────────────────────────────────────────
 
   useEffect(() => {
     const cs = chartStateRef.current;
-    if (!cs || !seriesData || seriesData.length === 0) return;
-
+    if (!cs || !data || data.timestamps.length === 0) return;
     const { innerW, innerH } = getInnerDims();
-
-    seriesDataRef.current = seriesData.map((s) => ({
-      timestamps: s.timestamps,
-      values: s.values,
-    }));
-    dataRef.current = {
-      timestamps: seriesData[0].timestamps,
-      values: seriesData[0].values,
-    };
-
+    dataRef.current = { timestamps: data.timestamps, values: data.values };
+    cs.webgl.pointCount = uploadLineData(cs.webgl, data.timestamps, data.values);
     drawChartNow(cs, innerW, innerH);
-  }, [seriesData, getInnerDims, drawChartNow]);
+  }, [data, getInnerDims, drawChartNow]);
 
   // ── 리사이즈 ──────────────────────────────────────────────────────────
 
@@ -333,6 +257,7 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
 
       const mouseTime = cs.xScale.invert(mx).getTime();
       const ts = dataRef.current.timestamps;
+      const vals = dataRef.current.values;
       const bisect = d3.bisector((d: number) => d).left;
       let idx = bisect(ts, mouseTime);
       if (idx >= ts.length) idx = ts.length - 1;
@@ -343,19 +268,16 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
       }
 
       const pointTime = ts[idx];
-
-      // 멀티라인: 해당 인덱스의 모든 라인 값을 툴팁에 표시
-      const series = seriesDataRef.current;
-      const firstVal = series[0]?.values[idx];
-      if (!Number.isFinite(firstVal)) return;
+      const pointVal = vals[idx];
+      if (!Number.isFinite(pointVal)) return;
 
       const px = cs.xScale(new Date(pointTime));
-      const py = cs.yScale(firstVal);
+      const py = cs.yScale(pointVal);
 
       cs.cursorVisible = true;
       cs.cursorX = px;
       cs.cursorY = py;
-      cs.cursorTemp = firstVal;
+      cs.cursorTemp = pointVal;
       cs.cursorTime = pointTime;
 
       drawCursor({
@@ -370,25 +292,10 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
 
       const tip = tooltipRef.current;
       if (tip) {
-        const dateStr = d3.timeFormat("%Y-%m-%d %H:%M")(new Date(pointTime));
-        // 멀티라인: 각 라인 값을 줄바꿈으로 표시
-        const lines = series
-          .map((s, i) => {
-            const line = config.lines[i];
-            if (!line) return "";
-            return config.formatTooltip(pointTime, s.values[idx], line.label);
-          })
-          .filter(Boolean)
-          .join("\n");
-
-        tip.style.whiteSpace = "pre";
-        tip.textContent = series.length > 1
-          ? `${dateStr}\n${lines}`
-          : lines;
-
+        tip.textContent = config.formatTooltip(pointTime, pointVal, firstLine.label);
         const offsetX = 12, offsetY = 12;
-        const tipW = tip.offsetWidth || 180;
-        const tipH = tip.offsetHeight || 48;
+        const tipW = tip.offsetWidth || 160;
+        const tipH = tip.offsetHeight || 28;
         const cw = containerRef.current?.clientWidth ?? containerWidth;
         const ch = containerRef.current?.clientHeight ?? HEIGHT;
         const rawLeft = MARGIN.left + mx + offsetX;
@@ -423,7 +330,7 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
       el.removeEventListener("mousemove", handleMouseMove);
       el.removeEventListener("mouseleave", handleMouseLeave);
     };
-  }, [config, getInnerDims, drawCursor, containerWidth, HEIGHT]);
+  }, [config, firstLine.label, getInnerDims, drawCursor, containerWidth, HEIGHT]);
 
   // ── 렌더 ──────────────────────────────────────────────────────────────
 
@@ -434,7 +341,7 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
           {config.title}
         </h2>
       )}
-      {isLoading && !seriesData && (
+      {isLoading && !data && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/60 z-20">
           <span className="text-sm text-gray-400">Loading...</span>
         </div>

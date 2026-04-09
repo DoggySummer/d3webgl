@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { LineSeries } from "@/lib/chart/chartConfig";
 
@@ -84,10 +84,16 @@ export function useChartData({ lines }: UseChartDataParams) {
       ? { start: firstTs[0], end: firstTs[firstTs.length - 1] }
       : viewRange;
 
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const updateViewRange = useCallback((start: number, end: number) => {
-    setViewRange((prev) =>
-      prev.start === start && prev.end === end ? prev : { start, end }
-    );
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setViewRange((prev) =>
+        prev.start === start && prev.end === end ? prev : { start, end }
+      );
+      timerRef.current = null;
+    }, 150);
   }, []);
 
   return {
