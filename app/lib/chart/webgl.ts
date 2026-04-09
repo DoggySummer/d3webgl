@@ -1,34 +1,35 @@
+// lib/chart/webgl.ts
+
 import type * as d3 from "d3";
 import type { WebGLState } from "@/lib/chart/types";
 
 export type ChartMargin = { top: number; right: number; bottom: number; left: number };
 
-// GLSL 셰이더 소스 생성, GPU가 좌표 변환하는 코드
+// ★ 변경: a_x는 이미 [0,1] 정규화값. u_viewStart/u_viewEnd로 뷰포트 범위만 받음
 export function createVertexShaderSource(margin: ChartMargin): string {
   return `
-  attribute float a_x;
+  attribute float a_x;       // 0~1 정규화된 x (CPU에서 전처리)
   attribute float a_y;
-  uniform float u_xMin;
-  uniform float u_xMax;
+  uniform float u_viewStart; // 현재 뷰 시작 (0~1)
+  uniform float u_viewEnd;   // 현재 뷰 끝   (0~1)
   uniform float u_yMin;
   uniform float u_yMax;
-  // MARGIN을 NDC로 환산하기 위한 캔버스 크기
-  uniform vec2 u_resolution; // (width, height) in px
+  uniform vec2 u_resolution;
   void main() {
-    // 데이터 좌표 → 0~1 정규화
-    float nx = (a_x - u_xMin) / (u_xMax - u_xMin);
+    float viewSpan = u_viewEnd - u_viewStart;
+    float nx = (a_x - u_viewStart) / viewSpan;  // 뷰포트 내 위치로 변환
     float ny = (a_y - u_yMin) / (u_yMax - u_yMin);
-    // innerW / innerH 를 px 기준으로 계산
+
     float marginL = float(${margin.left});
     float marginR = float(${margin.right});
     float marginT = float(${margin.top});
     float marginB = float(${margin.bottom});
     float innerW = u_resolution.x - marginL - marginR;
     float innerH = u_resolution.y - marginT - marginB;
-    // 픽셀 좌표 (원점 좌상단)
+
     float px = marginL + nx * innerW;
     float py = marginT + (1.0 - ny) * innerH;
-    // NDC 변환 (WebGL 원점 좌하단)
+
     float ndcX = (px / u_resolution.x) * 2.0 - 1.0;
     float ndcY = 1.0 - (py / u_resolution.y) * 2.0;
     gl_Position = vec4(ndcX, ndcY, 0.0, 1.0);
@@ -79,30 +80,47 @@ export function initWebGLState(gl: WebGLRenderingContext, program: WebGLProgram)
     xBuf,
     yBuf,
     pointCount: 0,
-    uXMin: gl.getUniformLocation(program, "u_xMin")!,
-    uXMax: gl.getUniformLocation(program, "u_xMax")!,
+    // ★ 변경: uXMin/uXMax → uViewStart/uViewEnd
+    uViewStart: gl.getUniformLocation(program, "u_viewStart")!,
+    uViewEnd: gl.getUniformLocation(program, "u_viewEnd")!,
     uYMin: gl.getUniformLocation(program, "u_yMin")!,
     uYMax: gl.getUniformLocation(program, "u_yMax")!,
     uResolution: gl.getUniformLocation(program, "u_resolution")!,
     uColor: gl.getUniformLocation(program, "u_color")!,
     aX: gl.getAttribLocation(program, "a_x"),
     aY: gl.getAttribLocation(program, "a_y"),
+    // ★ 전체 데이터 범위를 저장 (정규화 기준)
+    domainStartMs: 0,
+    domainSpanMs: 1,
   };
 }
 
+/**
+ * ★ 변경: timestamps를 [0,1]로 정규화해서 Float32Array로 업로드
+ * domainStart/domainSpan은 WebGLState에 저장해두고 draw 시 뷰포트 계산에 사용
+ */
 export function uploadLineData(
   wgl: WebGLState,
   timestamps: number[],
-  temperatures: number[]
+  values: number[]
 ): number {
   const { gl, xBuf, yBuf } = wgl;
   const n = timestamps.length;
+  if (n === 0) return 0;
+
+  // 전체 도메인 기준으로 정규화
+  const domainStart = timestamps[0];
+  const domainEnd = timestamps[n - 1];
+  const domainSpan = domainEnd - domainStart || 1;
+
+  wgl.domainStartMs = domainStart;
+  wgl.domainSpanMs = domainSpan;
 
   const xs = new Float32Array(n);
   const ys = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    xs[i] = timestamps[i];
-    ys[i] = Number.isFinite(temperatures[i]) ? temperatures[i] : -9999;
+    xs[i] = (timestamps[i] - domainStart) / domainSpan; // ★ 0~1 정규화
+    ys[i] = Number.isFinite(values[i]) ? values[i] : -9999;
   }
 
   gl.bindBuffer(gl.ARRAY_BUFFER, xBuf);
@@ -120,7 +138,8 @@ export function drawWebGLLine(
   yScale: d3.ScaleLinear<number, number>,
   canvasW: number,
   canvasH: number,
-  margin: ChartMargin
+  margin: ChartMargin,
+  color: [number, number, number, number] = [0.145, 0.388, 0.922, 1.0]
 ) {
   const { gl, program } = wgl;
 
@@ -131,21 +150,23 @@ export function drawWebGLLine(
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
 
-  // scissor test — MARGIN 영역 클립 (WebGL y원점은 좌하단)
   gl.enable(gl.SCISSOR_TEST);
   gl.scissor(margin.left, margin.bottom, innerW, innerH);
 
   gl.useProgram(program);
 
   const xDomain = xScale.domain();
+  // ★ 변경: ms → 정규화값 [0,1] 으로 변환해서 uniform에 전달
+  const viewStart = (xDomain[0].getTime() - wgl.domainStartMs) / wgl.domainSpanMs;
+  const viewEnd = (xDomain[1].getTime() - wgl.domainStartMs) / wgl.domainSpanMs;
   const yDomain = yScale.domain();
 
-  gl.uniform1f(wgl.uXMin, xDomain[0].getTime());
-  gl.uniform1f(wgl.uXMax, xDomain[1].getTime());
+  gl.uniform1f(wgl.uViewStart, viewStart);
+  gl.uniform1f(wgl.uViewEnd, viewEnd);
   gl.uniform1f(wgl.uYMin, yDomain[0]);
   gl.uniform1f(wgl.uYMax, yDomain[1]);
   gl.uniform2f(wgl.uResolution, canvasW, canvasH);
-  gl.uniform4f(wgl.uColor, 0.145, 0.388, 0.922, 1.0); // #2563eb
+  gl.uniform4f(wgl.uColor, ...color);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, wgl.xBuf);
   gl.enableVertexAttribArray(wgl.aX);
@@ -158,4 +179,3 @@ export function drawWebGLLine(
   gl.drawArrays(gl.LINE_STRIP, 0, wgl.pointCount);
   gl.disable(gl.SCISSOR_TEST);
 }
-

@@ -14,7 +14,7 @@ export function useWebGLLineLayer(params: {
   canvas: HTMLCanvasElement | null;
   margin: ChartMargin;
   timestamps: number[];
-  temperatures: number[];
+  values: number[];            // ← temperatures → values
 }) {
   const wglRef = useRef<WebGLState | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -32,29 +32,27 @@ export function useWebGLLineLayer(params: {
     const vertexSrc = createVertexShaderSource(params.margin);
     const program = createProgram(gl, vertexSrc);
     const wgl = initWebGLState(gl, program);
-    wgl.pointCount = uploadLineData(wgl, params.timestamps, params.temperatures);
+    wgl.pointCount = uploadLineData(wgl, params.timestamps, params.values);  // ← 변경
     wglRef.current = wgl;
     setIsReady(true);
 
     return () => {
       wglRef.current = null;
       setIsReady(false);
-      // NOTE: webgl resource cleanup is best-effort; contexts are typically GC'd.
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.canvas]);
 
-  // 데이터가 나중에 로드/갱신되는 경우(캔버스는 이미 준비된 상태)에도 버퍼를 다시 업로드
   useEffect(() => {
     const wgl = wglRef.current;
     if (!wgl) return;
-    wgl.pointCount = uploadLineData(wgl, params.timestamps, params.temperatures);
-  }, [params.timestamps, params.temperatures]);
+    wgl.pointCount = uploadLineData(wgl, params.timestamps, params.values);  // ← 변경
+  }, [params.timestamps, params.values]);                                     // ← 변경
 
-  const upload = (timestamps: number[], temperatures: number[]) => {
+  const upload = (timestamps: number[], values: number[]) => {
     const wgl = wglRef.current;
     if (!wgl) return 0;
-    wgl.pointCount = uploadLineData(wgl, timestamps, temperatures);
+    wgl.pointCount = uploadLineData(wgl, timestamps, values);
     return wgl.pointCount;
   };
 
@@ -70,4 +68,3 @@ export function useWebGLLineLayer(params: {
 
   return { wglRef, upload, draw, isReady };
 }
-

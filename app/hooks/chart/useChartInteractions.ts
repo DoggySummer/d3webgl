@@ -1,6 +1,5 @@
 import { useCallback, useEffect } from "react";
-import { clampViewRangeMs } from "@/hooks/useTemperatureData";
-import { clampYRange, countVisiblePoints } from "@/lib/chart/math";
+import { clampYRange, countVisiblePoints, clampViewRangeMs } from "@/lib/chart/math";
 import type { ChartState } from "@/lib/chart/types";
 
 export type ChartMargin = { top: number; right: number; bottom: number; left: number };

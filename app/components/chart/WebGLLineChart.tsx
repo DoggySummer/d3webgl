@@ -14,10 +14,9 @@ import {
   useCallback,
 } from "react";
 import * as d3 from "d3";
-import { clampViewRangeMs } from "@/hooks/useTemperatureData";
 import type { LineChartConfig } from "@/lib/chart/chartConfig";
 import type { ChartState } from "@/lib/chart/types";
-import { initialYRangeFromTemps } from "@/lib/chart/math";
+import { initialYRangeFromValues, clampViewRangeMs } from "@/lib/chart/math";
 import { drawWebGLLine, uploadLineData } from "@/lib/chart/webgl";
 import { useAxesLayer } from "@/hooks/chart/useAxesLayer";
 import { useCursorLayer } from "@/hooks/chart/useCursorLayer";
@@ -104,7 +103,7 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
     canvas: glCanvas,
     margin: MARGIN,
     timestamps: data?.timestamps ?? [],
-    temperatures: data?.values ?? [],
+    values: data?.values ?? [],
   });
 
   // ── 인터랙션 ──────────────────────────────────────────────────────────
@@ -163,7 +162,7 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
     const y0 =
       config.yMin !== undefined && config.yMax !== undefined
         ? { min: config.yMin, max: config.yMax }
-        : initialYRangeFromTemps(data.values);
+        : initialYRangeFromValues(data.values);
 
     const xScale = d3
       .scaleTime()
@@ -191,7 +190,7 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
       cursorVisible: false,
       cursorX: 0,
       cursorY: 0,
-      cursorTemp: 0,
+      cursorValue: 0,
       cursorTime: 0,
     };
 
@@ -277,7 +276,7 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
       cs.cursorVisible = true;
       cs.cursorX = px;
       cs.cursorY = py;
-      cs.cursorTemp = pointVal;
+      cs.cursorValue = pointVal;
       cs.cursorTime = pointTime;
 
       drawCursor({
