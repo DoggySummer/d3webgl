@@ -2,7 +2,7 @@
 "use client";
 
 import { WebGLMultiLineChart } from "@/components/chart/WebGlMultiLineChart";
-import { WIND_CONFIG } from "@/config/charts/windConfig";
+import { WIND_CONFIG } from "@/config/charts";
 
 export default function WindPage() {
   return (

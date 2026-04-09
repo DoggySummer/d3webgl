@@ -29,9 +29,10 @@ const MARGIN = { top: 20, right: 20, bottom: 60, left: 50 };
 
 interface WebGLLineChartProps {
   config: LineChartConfig;
+  dynamic?: boolean;
 }
 
-export function WebGLLineChart({ config }: WebGLLineChartProps) {
+export function WebGLLineChart({ config, dynamic = false }: WebGLLineChartProps) {
   const HEIGHT = config.height ?? 540;
   const firstLine = config.lines[0];
 
@@ -61,6 +62,7 @@ export function WebGLLineChart({ config }: WebGLLineChartProps) {
 
   const { data, isLoading, updateViewRange, viewRange } = useChartData({
     lines: [firstLine],
+    dynamic,
   });
 
   // ── 내부 치수 ─────────────────────────────────────────────────────────

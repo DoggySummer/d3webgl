@@ -16,6 +16,16 @@ export function useChartInteractions(params: {
   tooltipRef: React.RefObject<HTMLDivElement | null>;
   containerWidth: number;
 }) {
+  // ── 데이터 도메인 헬퍼 ───────────────────────────────────────────────
+  // timestamps 배열의 첫/끝값을 domainStart/domainEnd로 사용
+  // dynamic 모드에서는 fetch된 구간이 바뀔 때마다 dataRef가 갱신되므로
+  // 항상 dataRef.current에서 직접 읽어야 최신값을 얻을 수 있음
+  const getDomain = () => {
+    const ts = params.dataRef.current.timestamps;
+    if (ts.length === 0) return { domainStart: undefined, domainEnd: undefined };
+    return { domainStart: ts[0], domainEnd: ts[ts.length - 1] };
+  };
+
   const doZoom = useCallback(
     (factor: number): number => {
       const cs = params.chartStateRef.current;
@@ -29,7 +39,15 @@ export function useChartInteractions(params: {
       const range = xMax - xMin;
       const newRange = range * factor;
       const center = (xMin + xMax) / 2;
-      const clamped = clampViewRangeMs(center - newRange / 2, center + newRange / 2);
+
+      // ★ domainStart/domainEnd 추가
+      const { domainStart, domainEnd } = getDomain();
+      const clamped = clampViewRangeMs(
+        center - newRange / 2,
+        center + newRange / 2,
+        domainStart,
+        domainEnd
+      );
 
       cs.xScale.domain([new Date(clamped.start), new Date(clamped.end)]);
       params.drawChartNow(cs, innerW, innerH);
@@ -52,7 +70,15 @@ export function useChartInteractions(params: {
       const xMin = domain[0].getTime();
       const xMax = domain[1].getTime();
       const shift = (xMax - xMin) * 0.1 * direction;
-      const clamped = clampViewRangeMs(xMin + shift, xMax + shift);
+
+      // ★ domainStart/domainEnd 추가
+      const { domainStart, domainEnd } = getDomain();
+      const clamped = clampViewRangeMs(
+        xMin + shift,
+        xMax + shift,
+        domainStart,
+        domainEnd
+      );
 
       cs.xScale.domain([new Date(clamped.start), new Date(clamped.end)]);
       params.drawChartNow(cs, innerW, innerH);
@@ -84,7 +110,15 @@ export function useChartInteractions(params: {
       const zoomFactor = e.deltaY > 0 ? 1.06 : 0.94;
       const newRange = range * zoomFactor;
       const newMin = xMin + (range - newRange) * ratio;
-      const clamped = clampViewRangeMs(newMin, newMin + newRange);
+
+      // ★ domainStart/domainEnd 추가
+      const { domainStart, domainEnd } = getDomain();
+      const clamped = clampViewRangeMs(
+        newMin,
+        newMin + newRange,
+        domainStart,
+        domainEnd
+      );
 
       cs.xScale.domain([new Date(clamped.start), new Date(clamped.end)]);
       params.drawChartNow(cs, innerW, innerH);
@@ -141,7 +175,14 @@ export function useChartInteractions(params: {
       const dt = -(dx / innerW) * xSpan;
       const dyVal = (dy / innerH) * ySpan;
 
-      const clamped = clampViewRangeMs(startXMin + dt, startXMax + dt);
+      // ★ domainStart/domainEnd 추가
+      const { domainStart, domainEnd } = getDomain();
+      const clamped = clampViewRangeMs(
+        startXMin + dt,
+        startXMax + dt,
+        domainStart,
+        domainEnd
+      );
       const yc = clampYRange(startYMin + dyVal, startYMax + dyVal);
 
       cs.xScale.domain([new Date(clamped.start), new Date(clamped.end)]);
@@ -166,4 +207,3 @@ export function useChartInteractions(params: {
 
   return { doZoom, doPan };
 }
-

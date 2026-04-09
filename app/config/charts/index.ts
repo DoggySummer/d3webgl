@@ -6,7 +6,5 @@
  */
 
 export { TEMPERATURE_CONFIG } from "./temperatureConfig";
-
-// 새 차트 추가 예시:
-// export { SPEED_CONFIG } from "./speedConfig";
-// export { CLIMATE_CONFIG } from "./climateConfig";
+export { HUMIDITY_CONFIG } from "./humidityConfig";
+export { WIND_CONFIG } from "./windConfig";
